@@ -37,10 +37,8 @@ function saveFiles(files: FileItem[]) {
 
 /** 疑似 ingest：少し待って done にする（チャンク数も適当につける） */
 async function fakeIngest(): Promise<{ ingested_chunks: number }> {
-  // 0.6〜1.4秒くらい適当に待つ
   const ms = 600 + Math.floor(Math.random() * 800);
   await new Promise((r) => setTimeout(r, ms));
-  // 適当なチャンク数
   return { ingested_chunks: 5 + Math.floor(Math.random() * 20) };
 }
 
@@ -51,13 +49,14 @@ export default function IngestPage() {
 
   /** 一覧取得（ローカル） */
   const fetchFiles = async () => {
-    const list = loadFiles().sort((a, b) => b.id - a.id);
+    const list: FileItem[] = loadFiles().sort((a, b) => b.id - a.id);
     setFiles(list);
   };
 
   /** 1件アップロード（ローカル登録）＋疑似 ingest */
   const uploadOne = async (file: File) => {
     const newId = Date.now(); // 簡易ID
+
     const item: FileItem = {
       id: newId,
       filename: file.name,
@@ -68,16 +67,20 @@ export default function IngestPage() {
     };
 
     // 追加
-    const next = [item, ...loadFiles()];
+    const next: FileItem[] = [item, ...loadFiles()];
     saveFiles(next);
     setFiles(next);
 
     // 疑似 ingest
     const r = await fakeIngest();
 
-    const after = loadFiles().map((f) =>
-      f.id === newId ? { ...f, status: "done", ingested_chunks: r.ingested_chunks } : f
+    // ✅ ここが肝：after を FileItem[] として確定させる
+    const after: FileItem[] = loadFiles().map((f) =>
+      f.id === newId
+        ? { ...f, status: "done", ingested_chunks: r.ingested_chunks }
+        : f
     );
+
     saveFiles(after);
     setFiles(after);
 
@@ -132,25 +135,36 @@ export default function IngestPage() {
     setLoading(true);
     setStatus("再取り込み中…");
 
-    // processing にする
-    const before = loadFiles().map((f) => (f.id === id ? { ...f, status: "processing" } : f));
+    // ✅ before を FileItem[] として確定
+    const before: FileItem[] = loadFiles().map((f) =>
+      f.id === id ? { ...f, status: "processing" } : f
+    );
     saveFiles(before);
     setFiles(before);
 
     try {
       const r = await fakeIngest();
-      const after = loadFiles().map((f) =>
-        f.id === id ? { ...f, status: "done", ingested_chunks: r.ingested_chunks } : f
+
+      // ✅ after を FileItem[] として確定
+      const after: FileItem[] = loadFiles().map((f) =>
+        f.id === id
+          ? { ...f, status: "done", ingested_chunks: r.ingested_chunks }
+          : f
       );
+
       saveFiles(after);
       setFiles(after);
 
       setStatus(`再取り込み完了（${r.ingested_chunks} チャンク）`);
     } catch (e) {
       console.error(e);
-      const after = loadFiles().map((f) => (f.id === id ? { ...f, status: "error" } : f));
-      saveFiles(after);
-      setFiles(after);
+
+      const afterErr: FileItem[] = loadFiles().map((f) =>
+        f.id === id ? { ...f, status: "error" } : f
+      );
+
+      saveFiles(afterErr);
+      setFiles(afterErr);
       setStatus("再取り込みに失敗しました。");
     } finally {
       setLoading(false);
@@ -163,7 +177,7 @@ export default function IngestPage() {
 
     setLoading(true);
     try {
-      const after = loadFiles().filter((f) => f.id !== id);
+      const after: FileItem[] = loadFiles().filter((f) => f.id !== id);
       saveFiles(after);
       setFiles(after);
       setStatus("削除しました。");
@@ -174,9 +188,9 @@ export default function IngestPage() {
 
   useEffect(() => {
     fetchFiles();
-    // 5秒ポーリングはローカルだと不要だけど、UI互換のため残すならOK
     const timer = setInterval(fetchFiles, 5000);
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -193,9 +207,7 @@ export default function IngestPage() {
             <BackButton />
             <div>
               <div className="text-xs text-zinc-400">Ingest</div>
-              <h1 className="text-xl font-semibold tracking-tight">
-                ファイル管理
-              </h1>
+              <h1 className="text-xl font-semibold tracking-tight">ファイル管理</h1>
             </div>
           </div>
 
@@ -228,7 +240,9 @@ export default function IngestPage() {
               ＋ ファイルを選択（複数可）
             </label>
 
-            <div className="text-xs text-zinc-400">{loading ? "処理中…" : "PDFのみ対応"}</div>
+            <div className="text-xs text-zinc-400">
+              {loading ? "処理中…" : "PDFのみ対応"}
+            </div>
           </div>
 
           {status && (
@@ -264,7 +278,9 @@ export default function IngestPage() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <div className="truncate text-sm font-semibold">{file.filename}</div>
+                        <div className="truncate text-sm font-semibold">
+                          {file.filename}
+                        </div>
                         <span className="text-xs text-zinc-500">#{file.id}</span>
                       </div>
 
@@ -306,7 +322,9 @@ export default function IngestPage() {
           )}
         </section>
 
-        <div className="mt-8 text-center text-xs text-zinc-500">Ingest Dashboard</div>
+        <div className="mt-8 text-center text-xs text-zinc-500">
+          Ingest Dashboard
+        </div>
       </div>
     </div>
   );

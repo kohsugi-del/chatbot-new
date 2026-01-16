@@ -40,13 +40,13 @@ const cards: Card[] = [
     icon: "🌐",
     badge: { label: "Ingest", tone: "info" },
   },
-  {
-    title: "管理",
-    desc: "全体設定・実行状況・メンテナンス",
-    href: "/admin",
-    icon: "🛠️",
-    badge: { label: "Admin", tone: "warn" },
-  },
+  // {
+  //   title: "管理",
+  //   desc: "全体設定・実行状況・メンテナンス",
+  //   href: "/admin",
+  //   icon: "🛠️",
+  //   badge: { label: "Admin", tone: "warn" },
+  // },
 ];
 
 function Badge({
@@ -93,14 +93,14 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Link
+            {/* <Link
               className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
               href="/embed"
               target="_blank"
               rel="noreferrer"
             >
               埋め込みプレビュー ↗
-            </Link>
+            </Link> */}
           </div>
         </div>
 

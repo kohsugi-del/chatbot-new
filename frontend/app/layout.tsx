@@ -1,5 +1,6 @@
 // app/layout.tsx
 import "./globals.css";
+import ClientWidgets from "./ClientWidgets";
 
 export const metadata = {
   title: "Chatbot",
@@ -9,7 +10,13 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ja">
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <ClientWidgets />
+      </body>
     </html>
   );
 }
+
+
+

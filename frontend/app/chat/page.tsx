@@ -1,7 +1,7 @@
 // app/chat/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ChatContainer from "@/components/ChatContainer";
 import ChatBubble from "@/components/ChatBubble";
 import ChatInput from "@/components/ChatInput";
@@ -10,40 +10,105 @@ import BackButton from "@/components/BackButton";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
+// ====== 会話履歴保持（localStorage） ======
+const LS_KEY = "rag_chat_messages_v1";
+
+// コスト気にしない前提でも、無限に増えると遅くなるので安全上限だけ入れます（必要なら増やしてOK）
+const MAX_STORE_TURNS = 200; // 保存するメッセージ数上限
+const MAX_SEND_TURNS = 60; // APIに送る履歴数（/api/chat が履歴対応なら活きる）
+
+function safeJsonParse<T>(raw: string | null): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
 
   // UI表示用：API疎通状態
-  const [apiStatus, setApiStatus] = useState<
-    "idle" | "connected" | "error"
-  >("idle");
+  const [apiStatus, setApiStatus] = useState<"idle" | "connected" | "error">(
+    "idle"
+  );
+
+  // 自動スクロール
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // 送信する履歴（/api/chat が messages 対応していれば会話継続に使える）
+  const outboundMessages = useMemo(() => {
+    return messages.slice(-MAX_SEND_TURNS);
+  }, [messages]);
+
+  // 初回：localStorage から復元
+  useEffect(() => {
+    const saved = safeJsonParse<Msg[]>(localStorage.getItem(LS_KEY));
+    if (Array.isArray(saved) && saved.length) {
+      setMessages(saved);
+    }
+  }, []);
+
+  // messages が変わるたびに保存
+  useEffect(() => {
+    if (!messages.length) {
+      localStorage.removeItem(LS_KEY);
+      return;
+    }
+    const trimmed = messages.slice(-MAX_STORE_TURNS);
+    localStorage.setItem(LS_KEY, JSON.stringify(trimmed));
+  }, [messages]);
+
+  // messages / thinking が変わったら最下部へ
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, thinking]);
+
+  const clearChat = () => {
+    if (thinking) return;
+    setMessages([]);
+    setInput("");
+    setApiStatus("idle");
+    localStorage.removeItem(LS_KEY);
+  };
 
   async function sendMessage() {
     const userMessage = input.trim();
-    if (!userMessage) return;
+    if (!userMessage || thinking) return;
 
     setInput("");
-    setMessages((m) => [...m, { role: "user", content: userMessage }]);
     setThinking(true);
 
+    // setState の非同期ズレ対策：ここで「確定した履歴」を作る
+    const nextMessages: Msg[] = [...messages, { role: "user", content: userMessage }];
+
+    // UIに反映
+    setMessages(nextMessages);
+
     try {
-      // ✅ FastAPI の base は不要。Next.js の Route Handler に投げる
       const url = "/api/chat";
 
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage, top_k: 8 }),
+
+        // ✅ 会話履歴保持のために messages も一緒に送る
+        // ※ 現状の /api/chat が messages を見ない場合でも害はなく、
+        //   もし将来 /api/chat 側を履歴対応にしたらそのまま効くようになります。
+        body: JSON.stringify({
+          message: userMessage,
+          top_k: 8,
+          messages: nextMessages.slice(-MAX_SEND_TURNS),
+        }),
       });
 
       const data: any = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        const msg =
-          data?.error ??
-          `API error: ${res.status} ${res.statusText}`;
+        const msg = data?.error ?? `API error: ${res.status} ${res.statusText}`;
         setApiStatus("error");
         throw new Error(msg);
       }
@@ -51,7 +116,12 @@ export default function ChatPage() {
       setApiStatus("connected");
 
       const botReply = data?.answer ?? "回答に失敗しました。";
-      setMessages((m) => [...m, { role: "assistant", content: botReply }]);
+
+      // 返答を追加（functional updateで確実に）
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: botReply },
+      ]);
     } catch (e: any) {
       console.error(e);
       setMessages((m) => [
@@ -99,6 +169,16 @@ export default function ChatPage() {
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-300">
                 API: {apiBadge}
               </span>
+
+              <button
+                type="button"
+                onClick={clearChat}
+                disabled={thinking || messages.length === 0}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-300 disabled:opacity-50"
+                title="会話を消去"
+              >
+                クリア
+              </button>
             </div>
           </div>
 
@@ -114,7 +194,10 @@ export default function ChatPage() {
             <div className="min-h-[380px] max-h-[60vh] overflow-auto rounded-2xl border border-white/10 bg-black/30 p-4">
               {messages.length === 0 ? (
                 <div className="text-sm text-zinc-400">
-                  例：<span className="text-zinc-200">「はたらくあさひかわとは？」</span>
+                  例：
+                  <span className="text-zinc-200">
+                    「はたらくあさひかわとは？」
+                  </span>
                 </div>
               ) : null}
 
@@ -130,6 +213,8 @@ export default function ChatPage() {
                     <TypingDots />
                   </ChatBubble>
                 )}
+
+                <div ref={bottomRef} />
               </div>
             </div>
 
@@ -145,6 +230,12 @@ export default function ChatPage() {
               <div className="mt-2 text-xs text-zinc-400">
                 Enterで送信／Shift+Enterで改行（実装がある場合）
               </div>
+
+              {/* デバッグ表示（必要なら有効化）
+              <div className="mt-1 text-[10px] text-zinc-500">
+                保存: {messages.length} / 送信履歴: {outboundMessages.length}
+              </div>
+              */}
             </div>
           </div>
         </div>
